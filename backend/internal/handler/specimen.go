@@ -23,6 +23,7 @@ func (h *SpecimenHandler) Register(group *gin.RouterGroup) {
 	resource.POST("", middleware.RequireMinimumRole("operator"), h.create)
 	resource.PUT("/:id", middleware.RequireMinimumRole("operator"), h.update)
 	resource.POST("/:id/transition", middleware.RequireMinimumRole("operator"), h.transition)
+	resource.POST("/:id/splits", middleware.RequireMinimumRole("operator"), h.split)
 	resource.DELETE("/:id", middleware.RequireRoles("admin"), h.remove)
 }
 
@@ -97,6 +98,24 @@ func (h *SpecimenHandler) transition(c *gin.Context) {
 		return
 	}
 	util.OK(c, item)
+}
+
+func (h *SpecimenHandler) split(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var input dto.SplitSpecimen
+	if err := c.ShouldBindJSON(&input); err != nil {
+		util.Fail(c, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	parent, children, err := h.service.Split(c.Request.Context(), id, input, actorFromContext(c), requestIDFromContext(c))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	util.Created(c, dto.SplitSpecimenResult{Parent: parent, Children: children, Count: len(children)})
 }
 
 func (h *SpecimenHandler) remove(c *gin.Context) {

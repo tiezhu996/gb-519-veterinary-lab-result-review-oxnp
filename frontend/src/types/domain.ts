@@ -1,4 +1,15 @@
 
+export interface SpecimenChild {
+  id: number;
+  code: string;
+  name: string;
+  status: string;
+  availableQuantity: number;
+  quantityUnit: string;
+  splitSequence: number;
+  disposed: boolean;
+}
+
 export interface DomainRecord {
   id: number;
   code: string;
@@ -19,6 +30,16 @@ export interface DomainRecord {
   reviewedBy?: string;
   reviewReason?: string;
   revisions?: SignoffRevision[];
+  // 样本分装（aliquot）字段
+  quantity?: number;
+  quantityUnit?: string;
+  availableQuantity?: number;
+  parentId?: number;
+  splitSequence?: number;
+  splitToken?: string;
+  parentCode?: string;
+  children?: SpecimenChild[];
+  blockReasons?: string[];
   createdAt: string;
   updatedAt: string;
 }

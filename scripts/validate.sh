@@ -115,6 +115,46 @@ curl -fsS "http://127.0.0.1:${BACKEND_PORT:-19519}/api/audits/ResultSignoff/$sig
 curl -fsS "http://127.0.0.1:${BACKEND_PORT:-19519}/api/audit-summary?windowHours=24" -H "Authorization: Bearer $admin_token" \
   | jq -e '.data.total >= 6 and .data.transitions >= 3 and .data.uniqueActors >= 2' >/dev/null
 
+# 样本分装：余量扣减、连续子样、重复提交、并发版本、处置阻断
+split_token="gb519-split-$suffix"
+split_specimen=$(curl -fsS -X POST "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/1/transition" \
+  -H "Authorization: Bearer $operator_token" -H 'Content-Type: application/json' \
+  -d '{"status":"testing","expectedVersion":1,"reason":"split smoke move to testing"}')
+split_version=$(printf '%s' "$split_specimen" | jq -er '.data.version')
+split_result=$(curl -fsS -X POST "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/1/splits" \
+  -H "Authorization: Bearer $operator_token" -H 'Content-Type: application/json' -H 'X-Request-ID: gb519-split-create' \
+  -d "{\"expectedVersion\":$split_version,\"parts\":[20,30,50],\"reason\":\"compose split smoke aliquoting\",\"clientToken\":\"$split_token\"}")
+printf '%s' "$split_result" | jq -e '.data.parent.availableQuantity == 0 and (.data.children | length) == 3 and ([.data.children[].code] == ["S-001-C01","S-001-C02","S-001-C03"]) and ([.data.children[].parentCode] | all(. == "S-001"))' >/dev/null
+parent_after_split=$(printf '%s' "$split_result" | jq -er '.data.parent.version')
+
+duplicate_split_status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/1/splits" \
+  -H "Authorization: Bearer $operator_token" -H 'Content-Type: application/json' \
+  -d "{\"expectedVersion\":$parent_after_split,\"parts\":[20,30,50],\"reason\":\"duplicate must be rejected\",\"clientToken\":\"$split_token\"}")
+[ "$duplicate_split_status" = "409" ]
+
+insufficient_status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/2/splits" \
+  -H "Authorization: Bearer $operator_token" -H 'Content-Type: application/json' \
+  -d "{\"expectedVersion\":1,\"parts\":[40,25],\"reason\":\"quantity insufficient rejection\",\"clientToken\":\"gb519-short-$suffix\"}")
+[ "$insufficient_status" = "422" ]
+curl -fsS "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/2" -H "Authorization: Bearer $operator_token" \
+  | jq -e '.data.availableQuantity == 60 and .data.version == 1 and (.data.children | length) == 0' >/dev/null
+
+viewer_split_status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/3/splits" \
+  -H "Authorization: Bearer $viewer_token" -H 'Content-Type: application/json' \
+  -d "{\"expectedVersion\":1,\"parts\":[1,1],\"reason\":\"viewer must not split\",\"clientToken\":\"gb519-viewer-$suffix\"}")
+[ "$viewer_split_status" = "403" ]
+
+mother_hold=$(curl -fsS -X POST "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/1/transition" \
+  -H "Authorization: Bearer $operator_token" -H 'Content-Type: application/json' \
+  -d "{\"status\":\"hold\",\"expectedVersion\":$parent_after_split,\"reason\":\"split smoke mother to hold\"}")
+mother_hold_version=$(printf '%s' "$mother_hold" | jq -er '.data.version')
+mother_dispose_blocked=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/1/transition" \
+  -H "Authorization: Bearer $operator_token" -H 'Content-Type: application/json' \
+  -d "{\"status\":\"disposed\",\"expectedVersion\":$mother_hold_version,\"reason\":\"pending children must block disposal\"}")
+[ "$mother_dispose_blocked" = "422" ]
+curl -fsS "http://127.0.0.1:${BACKEND_PORT:-19519}/api/specimens/1" -H "Authorization: Bearer $viewer_token" \
+  | jq -e '.data.availableQuantity == 0 and ([.data.children[].code] | index("S-001-C02") != null) and ([.data.blockReasons[]] | length >= 1)' >/dev/null
+
 docker compose ps
 if [ "${KEEP_RUNNING:-0}" = "1" ]; then
   echo "KEEP_RUNNING=1: containers left running for built-in Browser validation"

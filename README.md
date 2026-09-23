@@ -33,6 +33,7 @@ docker compose down -v --remove-orphans
 | 结果签发 | `ResultSignoff` | `/api/signoff` | draft, peer_review, signed, rejected |
 
 - 独立登录页和 viewer/operator/reviewer/admin 四级 RBAC；写操作至少需要 operator，审计接口至少需要 reviewer。
+- 样本分装（aliquot）：已接收或检测中的母样可由操作员按剩余可用量分成 2-5 份，系统在单一事务内完成母样余量扣减、连续编号子样（`母样编号-C01…C05`，跨批次顺延）生成、批次幂等记录与来源审计；余量不足、状态不允许、版本过期（并发）或同一 `clientToken` 重复提交时整批拒绝且母样不变；母样存在未处置子样时禁止处置；样本页回读可用量、来源母样、子样清单与阻断原因。
 - 结果签发只能按 `draft -> peer_review -> signed/rejected` 推进；签发与驳回必须由不同于制单人的 reviewer/admin 完成。
 - 每次签发创建、草稿编辑和状态决策都会追加不可覆盖的版本，保留证据、操作者、原因和 request ID。
 - 所有状态变化使用乐观锁并写入不可覆盖的审计日志；已进入复核的签发业务字段不可再编辑。
@@ -128,6 +129,21 @@ KEEP_RUNNING=1 ./scripts/validate.sh
 2. 只有原制单人可以编辑或提交草稿；每次编辑和提交均追加版本。
 3. operator 不能作出最终签发决定；reviewer/admin 可以签发或驳回，但操作者必须不同于 `preparedBy`。
 4. `signed` 和 `rejected` 为终态，全部修订可从签发查询接口读取，审计历史可由 reviewer/admin 查询。
+
+## 样本分装
+
+- 权限：`POST /api/specimens/:id/splits` 需要 operator 及以上；viewer 返回 403。
+- 状态：仅 `received`、`testing` 的样本可分装；每份分配量必须大于 0，份数 2-5，分配总量不得超过 `availableQuantity`。
+- 原子性：母样条件扣减（版本一致且扣减后非负）、子样批量创建、批次记录与审计在同一数据库事务内完成，任一失败全部回滚。
+- 幂等与并发：`clientToken` 唯一索引 + 前置判重保证重复提交整批拒绝；过期 `expectedVersion` 返回 409，不产生子样。
+- 处置阻断：母样直接子样仍有非 `disposed` 状态时，母样迁移到 `disposed` 返回 422。
+- 子样编号：`<母样编码>-C01` 起按同一母样既有最大序号连续顺延；子样同样可继续分装，谱系经 `parentId`/`parentCode`/`splitToken` 回读。
+
+```bash
+curl -sS -X POST http://127.0.0.1:19519/api/specimens/1/splits \
+  -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+  -d '{"expectedVersion":2,"parts":[20,30,50],"reason":"PCR 三向分装","clientToken":"split-9f1c2a7e-…"}'
+```
 
 ## 环境变量
 

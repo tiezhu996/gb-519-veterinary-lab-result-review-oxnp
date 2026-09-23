@@ -15,6 +15,12 @@ const (
 
 var AllSpecimenState = []string{"received", "testing", "hold", "released", "disposed"}
 
+// SpecimenSplitStates 列出允许分装的样本状态：只有已接收或检测中的样本可由操作员分装。
+var SpecimenSplitStates = map[string]bool{
+	"received": true,
+	"testing":  true,
+}
+
 type SignoffState string
 
 const (
