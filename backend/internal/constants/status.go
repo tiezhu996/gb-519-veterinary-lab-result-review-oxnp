@@ -15,6 +15,16 @@ const (
 
 var AllSpecimenState = []string{"received", "testing", "hold", "released", "disposed"}
 
+// SpecimenSplittableStates lists the states from which 操作员 may 分装 a mother
+// specimen: 已接收 or 检测中.
+var SpecimenSplittableStates = map[string]bool{
+	"received": true,
+	"testing":  true,
+}
+
+// CanSplitSpecimen reports whether a specimen in the given state may be split.
+func CanSplitSpecimen(status string) bool { return SpecimenSplittableStates[status] }
+
 type SignoffState string
 
 const (

@@ -79,10 +79,19 @@ func migrate(db *gorm.DB) error {
 		&model.User{}, &model.AuditLog{},
 		&model.AnimalCase{},
 		&model.Specimen{},
+		&model.SpecimenSplit{},
 		&model.AssayRun{},
 		&model.ResultSignoff{},
 		&model.ResultSignoffRevision{},
 	)
+}
+
+// MigrateAndSeedForTests prepares an isolated database for integration tests.
+func MigrateAndSeedForTests(db *gorm.DB) error {
+	if err := migrate(db); err != nil {
+		return err
+	}
+	return Seed(context.Background(), db)
 }
 
 func Seed(ctx context.Context, db *gorm.DB) error {
@@ -162,17 +171,20 @@ func seedSpecimen(ctx context.Context, db *gorm.DB) error {
 		{BaseModel: model.BaseModel{Code: "S-001", Name: "检验样本示例一", Status: "received", Version: 1,
 			Description: "用于启动验证和主要流程演示的检验样本记录"}, Facility: "兽医检验样本结果复核区域1", Owner: "运行一组",
 			Category: "常规", RiskLevel: "low", MetricValue: 12.5, MetricUnit: "unit",
-			EffectiveAt: now.Add(0 * time.Hour), Evidence: "已完成基础证据核对", RelatedCode: "REL-519-01"},
+			EffectiveAt: now.Add(0 * time.Hour), Evidence: "已完成基础证据核对", RelatedCode: "REL-519-01",
+			AvailableAmount: 60, AvailableUnit: "mL"},
 
 		{BaseModel: model.BaseModel{Code: "S-002", Name: "检验样本示例二", Status: "testing", Version: 1,
 			Description: "用于启动验证和主要流程演示的检验样本记录"}, Facility: "兽医检验样本结果复核区域2", Owner: "质量复核组",
 			Category: "重点", RiskLevel: "medium", MetricValue: 25.0, MetricUnit: "%",
-			EffectiveAt: now.Add(3 * time.Hour), Evidence: "已完成基础证据核对", RelatedCode: "REL-519-02"},
+			EffectiveAt: now.Add(3 * time.Hour), Evidence: "已完成基础证据核对", RelatedCode: "REL-519-02",
+			AvailableAmount: 45, AvailableUnit: "mL"},
 
 		{BaseModel: model.BaseModel{Code: "S-003", Name: "检验样本示例三", Status: "hold", Version: 1,
 			Description: "用于启动验证和主要流程演示的检验样本记录"}, Facility: "兽医检验样本结果复核区域3", Owner: "安全主管组",
 			Category: "复核", RiskLevel: "high", MetricValue: 37.5, MetricUnit: "score",
-			EffectiveAt: now.Add(6 * time.Hour), Evidence: "已完成基础证据核对", RelatedCode: "REL-519-03"},
+			EffectiveAt: now.Add(6 * time.Hour), Evidence: "已完成基础证据核对", RelatedCode: "REL-519-03",
+			AvailableAmount: 30, AvailableUnit: "mL"},
 	}
 	return db.WithContext(ctx).Create(&items).Error
 }

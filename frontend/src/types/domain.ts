@@ -1,4 +1,17 @@
 
+export interface SpecimenLineage {
+  id: number;
+  code: string;
+  name: string;
+  status: string;
+  version: number;
+  sequence: number;
+  availableAmount: number;
+  availableUnit: string;
+  amount: number;
+  parentId: number;
+}
+
 export interface DomainRecord {
   id: number;
   code: string;
@@ -19,8 +32,21 @@ export interface DomainRecord {
   reviewedBy?: string;
   reviewReason?: string;
   revisions?: SignoffRevision[];
+  availableAmount?: number;
+  availableUnit?: string;
+  parentId?: number;
+  splitSeq?: number;
+  children?: SpecimenLineage[];
+  blockedReason?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SplitPortion { amount: number }
+export interface SplitSpecimenInput {
+  expectedVersion: number;
+  reason: string;
+  portions: SplitPortion[];
 }
 
 export interface SignoffRevision {

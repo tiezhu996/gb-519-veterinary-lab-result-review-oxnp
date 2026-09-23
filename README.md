@@ -33,6 +33,7 @@ docker compose down -v --remove-orphans
 | 结果签发 | `ResultSignoff` | `/api/signoff` | draft, peer_review, signed, rejected |
 
 - 独立登录页和 viewer/operator/reviewer/admin 四级 RBAC；写操作至少需要 operator，审计接口至少需要 reviewer。
+- 样本分装：已接收或检测中的样本可由操作员按剩余可用量一次分成 2-5 份子样，事务内原子完成母样余量扣减、连续子样生成（编码 `母样码-序号`）与来源记录；余量不足、状态不允许、并发或重复提交时整批拒绝、母样不变；母样存在未处置子样时禁止处置；样本页回读可用量、来源、子样清单与阻断原因。
 - 结果签发只能按 `draft -> peer_review -> signed/rejected` 推进；签发与驳回必须由不同于制单人的 reviewer/admin 完成。
 - 每次签发创建、草稿编辑和状态决策都会追加不可覆盖的版本，保留证据、操作者、原因和 request ID。
 - 所有状态变化使用乐观锁并写入不可覆盖的审计日志；已进入复核的签发业务字段不可再编辑。
@@ -121,6 +122,16 @@ KEEP_RUNNING=1 ./scripts/validate.sh
 | `SignoffState` | `draft, peer_review, signed, rejected` | `backend/internal/constants/status.go`、`frontend/src/types/status.ts` |
 
 每个实体自己的完整迁移图同样位于 `backend/internal/constants/status.go`；页面使用的状态列表位于 `frontend/src/types/status.ts`。修改状态时必须同步两处并更新对应服务测试。
+
+## 样本分装控制
+
+1. 只有 `received`/`testing`（已接收、检测中）状态且角色不低于 operator 时可调用 `POST /api/specimens/:id/split`。
+2. 每批必须携带 `expectedVersion` 与 2-5 个正数 `portions`，合计不得超过母样 `availableAmount`。
+3. 系统在单个数据库事务内：按条件 `version + available_amount >= 合计` 原子扣减母样余量并自增版本、批量插入子样、写入 `specimen_splits` 来源记录和审计日志；任一步失败整批回滚。
+4. 子样编码连续（`S-001-01`、`S-001-02`…，跨批次延续），初始状态为 `received`，通过 `parentId`/`relatedCode` 和来源记录可追溯到母样。
+5. 并发提交与重复（过期版本号）提交返回 `409 version_conflict`，余量不足或状态不允许返回 `422 business_rule`，母样均保持不变。
+6. 母样尚有非 `disposed` 子样时，其 `disposed` 迁移返回 `422`；子样全部处置后母样方可处置。原有接收、状态迁移与权限规则不变。
+7. 列表与详情接口回读 `availableAmount`、`parentId`、`children` 子样清单和 `blockedReason` 阻断原因，刷新后仍可追溯。
 
 ## 结果签发控制
 
